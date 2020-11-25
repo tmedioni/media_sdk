@@ -1,36 +1,73 @@
 #include <iostream>
+
 #include <httplib.h>
+#include <spdlog/spdlog.h>
 
-class Proxy
-{
-public:
-    explicit Proxy(std::string url) : m_url(std::move(url)) {}
+namespace {
 
-    void requestHandler(const httplib::Request &req, httplib::Response &res)
+
+    struct InvalidStreamUrlException : public std::exception
     {
-        std::cout << "[IN]" << req.path << std::endl;
-        std::cout << "Body: '" << req.body << "'" << std::endl;
-        res.set_content("", "text/plain");
-    }
+        const char * what() const noexcept override
+        {
+            return "Check the input stream Url. It has to point towards an m2u8 resource.";
+        }
+    };
 
-private:
-    std::string m_url;
-};
+    const std::regex path_prefix(R"reg(^http(s)?:\/\/[^\/]+\/)reg");
+
+    class Proxy
+    {
+    public:
+        explicit Proxy(std::string url)
+        {
+            if (!std::regex_search(url, path_prefix)) {
+                throw InvalidStreamUrlException();
+            }
+        }
+
+        void requestHandler(const httplib::Request &req, httplib::Response &res)
+        {
+            std::cout << "[IN]" << req.path << std::endl;
+            std::cout << "Body: '" << req.body << "'" << std::endl;
+            res.set_content("", "text/plain");
+        }
+
+    private:
+        std::string m_path;
+        std::string m_resource;
+    };
+
+}
 
 using namespace std::placeholders;
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        std::cerr << "Usage: ./media_sdk http://stream-url" << std::endl;
+        spdlog::error("Usage: ./media_sdk http://stream-url/path/stream.m3u8");
         return -1;
     }
-    Proxy proxy(argv[1]);
 
-    httplib::Server server;
+    try
+    {
+        Proxy proxy(argv[1]);
 
-    server.Get(".*", [&](const auto& rq, auto& res) { return proxy.requestHandler(rq, res); });
-    server.listen("0.0.0.0", 8080);
+        httplib::Server server;
+
+        server.Get(".*", [&](const auto& rq, auto& res) { return proxy.requestHandler(rq, res); });
+        server.listen("0.0.0.0", 8080);
+    }
+    catch (const InvalidStreamUrlException& e)
+    {
+        spdlog::error("Error: {}", e.what());
+        return -2;
+    }
+    catch (...)
+    {
+        spdlog::error("Something wrong happened...");
+        return -3;
+    }
 
     return 0;
 }
