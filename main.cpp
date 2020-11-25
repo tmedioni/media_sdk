@@ -14,14 +14,26 @@ namespace {
         }
     };
 
-    const std::regex path_prefix(R"reg(^http(s)?:\/\/[^\/]+\/)reg");
+    const std::regex path_prefix_regex(R"reg(^http(s)?:\/\/[^\/]+\/)reg");
 
     class Proxy
     {
     public:
-        explicit Proxy(std::string url)
+        explicit Proxy(const std::string& url)
         {
-            if (!std::regex_search(url, path_prefix)) {
+            std::smatch url_prefix;
+            if (std::regex_search(url, url_prefix,path_prefix_regex))
+            {
+                if (url_prefix.suffix().length() == 0)
+                    throw InvalidStreamUrlException();
+
+                m_path = url_prefix[0];
+                m_resource = url_prefix.suffix();
+                spdlog::trace("Parsed input stream address: '{}' from '{}'", m_path, url);
+                spdlog::trace("Parsed input stream resource: '{}' from '{}'", m_resource, url);
+            }
+            else
+            {
                 throw InvalidStreamUrlException();
             }
         }
