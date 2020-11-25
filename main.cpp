@@ -28,8 +28,8 @@ namespace {
 
         void requestHandler(const httplib::Request &req, httplib::Response &res)
         {
-            std::cout << "[IN]" << req.path << std::endl;
-            std::cout << "Body: '" << req.body << "'" << std::endl;
+            spdlog::trace("Request path: '{}'", req.path);
+            spdlog::trace("Request body: '{}'", req.body);
             res.set_content("", "text/plain");
         }
 
@@ -43,6 +43,7 @@ namespace {
 using namespace std::placeholders;
 int main(int argc, char **argv)
 {
+    spdlog::set_level(spdlog::level::trace);
     if (argc < 2)
     {
         spdlog::error("Usage: ./media_sdk http://stream-url/path/stream.m3u8");
