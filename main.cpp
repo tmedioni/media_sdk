@@ -1,4 +1,4 @@
-#include <iostream>
+#include <string>
 
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
@@ -34,7 +34,7 @@ namespace {
                 m_path = url_matches[3];
                 m_path.push_back('/');
 
-                m_resource = url_matches[4];
+                m_resource = url_matches[5];
                 spdlog::trace("Parsed input stream CDN domain: '{}' from '{}'", m_domain, url);
                 spdlog::trace("Parsed input stream intermediate path: '{}' from '{}'", m_path, url);
                 spdlog::trace("Parsed input stream resource: '{}' from '{}'", m_resource, url);
@@ -51,24 +51,29 @@ namespace {
             spdlog::trace("Request body: '{}'", request.body);
 
             httplib::SSLClient client(m_domain.c_str());
-            if (auto subrequest =  client.Get(m_resource.c_str()))
+            std::string url = m_path + m_resource;
+
+            spdlog::trace("Performing a subrequest on the CDN for the resource at {}", url);
+            if (auto subrequest =  client.Get(url.c_str()))
             {
                 if (subrequest->status == 200)
                 {
-                    spdlog::trace("Subrequest content: {}", subrequest->body);
+                    spdlog::trace("Subrequest received: {}...", subrequest->body.substr(0, 20));
+
+                    result.set_content(subrequest->body, "audio/x-mpegurl");
+
+                    spdlog::trace("Sending back to caller");
+                    return;
                 }
                 else
                 {
                     spdlog::error("Subrequest to CDN error: {}", subrequest.error());
                 }
-
             }
             else
             {
                 spdlog::error("Subrequest to CDN error: {}", subrequest.error());
             }
-
-
             result.set_content("", "text/plain");
         }
 
