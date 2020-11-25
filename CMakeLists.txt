@@ -6,4 +6,4 @@ set(CMAKE_CXX_STANDARD 17)
 include_directories(deps)
 
 add_executable(media_sdk main.cpp)
-target_link_libraries(media_sdk pthread)
+target_link_libraries(media_sdk pthread ssl crypto)
