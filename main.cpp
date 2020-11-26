@@ -19,6 +19,8 @@ namespace {
     };
 
     const std::regex path_prefix_regex(R"reg(^http(s)?:\/\/([^\/]+)$)reg");
+    const std::regex absolute_entry_regex(R"reg(^(http(s)?:\/\/([^\/]+))(.*)$)reg");
+
 using namespace std::string_literals;
     class Proxy
     {
@@ -28,8 +30,7 @@ using namespace std::string_literals;
             std::smatch url_matches;
             if (std::regex_match(url, url_matches,path_prefix_regex))
             {
-                // First capture group is the s from https
-                m_domain = url_matches[2];
+                m_domain = url;
 
                 spdlog::info("Parsed input stream CDN domain: '{}' from '{}'", m_domain, url);
             }
@@ -39,15 +40,28 @@ using namespace std::string_literals;
             }
         }
 
-        void requestHandler(const httplib::Request &request, httplib::Response &result) const
+        void requestHandler(const httplib::Request &request, httplib::Response &result)
         {
             spdlog::trace("Request path: '{}'", request.path);
             spdlog::trace("Request body: '{}'", request.body);
 
-            httplib::SSLClient client(m_domain.c_str());
-            std::string url = request.path;
+            const std::string url = request.path;
+            const std::string domain = getServerUrl(url);
 
-            spdlog::info("[IN] http://localhost:8080{}", url);
+            spdlog::trace("Target CDN domain: '{}'", domain);
+
+            httplib::Client client(domain.c_str());
+
+            const bool manifest = isManifest(url);
+
+            if (manifest && m_is_playing)
+            {
+                spdlog::info("[TRACK SWITCH]");
+            }
+            m_is_playing = !manifest;
+
+            const char * type = isManifest(url) ? "MANIFEST" : "SEGMENT";
+            spdlog::info("[IN][{}] http://localhost:8080{}", type, url);
             auto start_time = std::chrono::system_clock::now();
 
             if (auto subrequest =  client.Get(url.c_str()))
@@ -56,10 +70,16 @@ using namespace std::string_literals;
                 {
                     spdlog::trace("Subrequest received: {}...", subrequest->body.substr(0, 20));
 
-                    result.set_content(subrequest->body, "audio/x-mpegurl");
-
+                    if (!manifest)
+                    {
+                        result.set_content(subrequest->body, "audio/x-mpegurl");
+                    }
+                    else
+                    {
+                        result.set_content(processManifest(subrequest->body), "audio/x-mpegurl");
+                    }
                     auto end_time = std::chrono::system_clock::now();
-                    spdlog::info("[OUT] http://localhost:8080{} ({}ms)", url, std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count());
+                    spdlog::info("[OUT][{}] http://localhost:8080{} ({}ms)", type, url, std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count());
                     return;
                 }
                 else
@@ -76,8 +96,61 @@ using namespace std::string_literals;
 
     private:
         std::string m_domain;
-    };
+        std::atomic_bool m_is_playing = false;
 
+        std::mutex m_absolute_links_mut;
+        std::unordered_map<std::string, std::string> m_absolute_links; // Resource path -> absolute url server
+
+        static bool isManifest(const std::string& url)
+        {
+            return url.size() > 5 && url.substr(url.size() - 5) == ".m3u8"s;
+        }
+
+        std::string processManifest(const std::string& body)
+        {
+            std::string result;
+
+            std::istringstream iss(body);
+
+            for (std::string line; std::getline(iss, line); )
+            {
+                std::smatch absolute_match;
+                if (std::regex_match(line, absolute_match, absolute_entry_regex))
+                {
+                    const std::string resource = absolute_match[4].str();
+                    const std::string domain = absolute_match[1].str();
+                    // Capture groups 2 and 3 are the (s) of http(s) and the repeated non / character.
+                    spdlog::trace("Found absolute link, address '{}', resource '{}'", domain, resource);
+
+                    {
+                        std::lock_guard<std::mutex> lock(m_absolute_links_mut);
+                        m_absolute_links.emplace(resource, domain);
+                    }
+
+                    // our resource path is /something/resource.ext but we remove the / for the manifest
+                    result += resource;//.substr(1);
+                }
+                else
+                {
+                    result += line;
+                }
+                result+= "\n";
+            }
+            return result;
+        }
+
+        std::string getServerUrl(const std::string& resource_path)
+        {
+            std::lock_guard<std::mutex> lock(m_absolute_links_mut);
+
+            if (auto found = m_absolute_links.find(resource_path); found != m_absolute_links.end())
+            {
+                spdlog::trace("Found resource '{}' bound to an absolute url '{}'", found->first, found->second);
+                return found->second;
+            }
+            return m_domain;
+        }
+    };
 }
 
 using namespace std::placeholders;
@@ -86,7 +159,7 @@ int main(int argc, char **argv)
     //spdlog::set_level(spdlog::level::trace);
     if (argc < 2)
     {
-        spdlog::error("Usage: ./media_sdk http://stream-url/path/stream.m3u8");
+        spdlog::error("Usage: ./media_sdk http://stream-url.io");
         return -1;
     }
 
