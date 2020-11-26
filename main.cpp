@@ -14,12 +14,12 @@ namespace {
     {
         const char * what() const noexcept override
         {
-            return "Check the input stream Url. It has to point towards an m2u8 resource.";
+            return "Check the input stream Url. It has to point towards an m3u8 resource.";
         }
     };
 
-    const std::regex path_prefix_regex(R"reg(^http(s)?:\/\/([^\/]+)((\/[^\/]+)*)\/([^\/]+)$)reg");
-    using namespace std::string_literals;
+    const std::regex path_prefix_regex(R"reg(^http(s)?:\/\/([^\/]+)$)reg");
+using namespace std::string_literals;
     class Proxy
     {
     public:
@@ -31,13 +31,7 @@ namespace {
                 // First capture group is the s from https
                 m_domain = url_matches[2];
 
-                m_path = url_matches[3];
-                m_path.push_back('/');
-
-                m_resource = url_matches[5];
-                spdlog::trace("Parsed input stream CDN domain: '{}' from '{}'", m_domain, url);
-                spdlog::trace("Parsed input stream intermediate path: '{}' from '{}'", m_path, url);
-                spdlog::trace("Parsed input stream resource: '{}' from '{}'", m_resource, url);
+                spdlog::info("Parsed input stream CDN domain: '{}' from '{}'", m_domain, url);
             }
             else
             {
@@ -51,7 +45,7 @@ namespace {
             spdlog::trace("Request body: '{}'", request.body);
 
             httplib::SSLClient client(m_domain.c_str());
-            std::string url = m_path + m_resource;
+            std::string url = request.path;
 
             spdlog::trace("Performing a subrequest on the CDN for the resource at {}", url);
             if (auto subrequest =  client.Get(url.c_str()))
@@ -79,8 +73,6 @@ namespace {
 
     private:
         std::string m_domain;
-        std::string m_path;
-        std::string m_resource;
     };
 
 }
@@ -88,7 +80,7 @@ namespace {
 using namespace std::placeholders;
 int main(int argc, char **argv)
 {
-    spdlog::set_level(spdlog::level::trace);
+    //spdlog::set_level(spdlog::level::trace);
     if (argc < 2)
     {
         spdlog::error("Usage: ./media_sdk http://stream-url/path/stream.m3u8");
