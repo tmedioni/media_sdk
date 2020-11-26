@@ -47,7 +47,9 @@ using namespace std::string_literals;
             httplib::SSLClient client(m_domain.c_str());
             std::string url = request.path;
 
-            spdlog::trace("Performing a subrequest on the CDN for the resource at {}", url);
+            spdlog::info("[IN] http://localhost:8080{}", url);
+            auto start_time = std::chrono::system_clock::now();
+
             if (auto subrequest =  client.Get(url.c_str()))
             {
                 if (subrequest->status == 200)
@@ -56,7 +58,8 @@ using namespace std::string_literals;
 
                     result.set_content(subrequest->body, "audio/x-mpegurl");
 
-                    spdlog::trace("Sending back to caller");
+                    auto end_time = std::chrono::system_clock::now();
+                    spdlog::info("[OUT] http://localhost:8080{} ({}ms)", url, std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count());
                     return;
                 }
                 else
