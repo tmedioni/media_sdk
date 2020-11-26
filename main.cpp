@@ -5,8 +5,6 @@
 #include <httplib.h>
 #include <spdlog/spdlog.h>
 
-
-
 namespace {
 
 
@@ -127,8 +125,7 @@ using namespace std::string_literals;
                         m_absolute_links.emplace(resource, domain);
                     }
 
-                    // our resource path is /something/resource.ext but we remove the / for the manifest
-                    result += resource;//.substr(1);
+                    result += resource;
                 }
                 else
                 {
